@@ -215,7 +215,7 @@ Class Tool {
 
 		run_command "          " $output_file $script:timeout $cmd @cmdargs
 		if (!(test-path $output_file)) {
-			throw "Command ran, but did not produce output file [$output_file]"
+			Write-Host "Command ran, but did not produce output file [$output_file]"
 		}
 	}
 
