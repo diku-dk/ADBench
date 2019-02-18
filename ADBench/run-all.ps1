@@ -46,7 +46,7 @@ function run_command ($indent, $outfile, $timeout, $cmd) {
 	write-host "Run [$cmd $args]"
 	$ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
 	$ProcessInfo.FileName = $cmd
-	$ProcessInfo.RedirectStandardError = $true
+	# $ProcessInfo.RedirectStandardError = $true
 	$ProcessInfo.RedirectStandardOutput = $true
 	$ProcessInfo.UseShellExecute = $false
 	$ProcessInfo.Arguments = $args
@@ -61,7 +61,7 @@ function run_command ($indent, $outfile, $timeout, $cmd) {
 	$status = $Process.WaitForExit($timeout * 1000)
 	if ($status) {
 		$stdout = $Process.StandardOutput.ReadToEnd().Trim().Replace("`n", "`n${indent}stdout> ")
-		$stderr = $Process.StandardError.ReadToEnd().Trim().Replace("`n", "`n${indent}stderr> ")
+		# $stderr = $Process.StandardError.ReadToEnd().Trim().Replace("`n", "`n${indent}stderr> ")
 		$allOutput = "${indent}stdout> " + $stdout + "`n${indent}stderr> " + $stderr
 		Write-Host "$allOutput"
 	} else {
