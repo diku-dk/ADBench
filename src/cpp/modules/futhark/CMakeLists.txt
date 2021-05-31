@@ -8,10 +8,16 @@ add_custom_command(
      OUTPUT
          ${CMAKE_CURRENT_BINARY_DIR}/ba.c
          ${CMAKE_CURRENT_BINARY_DIR}/ba.h
+         ${CMAKE_CURRENT_BINARY_DIR}/gmm.c
+         ${CMAKE_CURRENT_BINARY_DIR}/gmm.h
      COMMAND futhark ${FUTHARK_BACKEND}
          --library ba.fut
          -o ${CMAKE_CURRENT_BINARY_DIR}/ba
+     COMMAND futhark ${FUTHARK_BACKEND}
+         --library gmm.fut
+         -o ${CMAKE_CURRENT_BINARY_DIR}/gmm
      DEPENDS ba.fut
+     DEPENDS gmm.fut
      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
      VERBATIM
 )
@@ -21,6 +27,9 @@ target_sources("Futhark" PRIVATE "${CMAKE_SOURCE_DIR}/src/cpp/shared/utils.cpp")
 target_sources("Futhark" PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/FutharkBA.cpp")
 target_sources("Futhark" PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/ba.c")
 target_sources("Futhark" PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/ba.h")
+target_sources("Futhark" PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/FutharkGMM.cpp")
+target_sources("Futhark" PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/gmm.c")
+target_sources("Futhark" PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/gmm.h")
 target_include_directories("Futhark" PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 if (${FUTHARK_BACKEND} STREQUAL "c")
