@@ -4,15 +4,13 @@
 #include "../../shared/GMMData.h"
 
 extern "C" {
-#include "gmm.h"
+#include "omnibus.h"
 }
 
 #include <vector>
 
 #undef NDEBUG
-#define USE_FWD
 #include <assert.h>
-#include <iostream>
 
 class FutharkGMM : public ITest<GMMInput, GMMOutput> {
 private:
@@ -51,9 +49,6 @@ void FutharkGMM::prepare(GMMInput&& input)
   this->cfg = futhark_context_config_new();
   this->ctx = futhark_context_new(this->cfg);
 
-  futhark_context_config_set_debugging(this->cfg, true);
-  futhark_context_config_set_logging(this->cfg, true);
-
   assert((this->alphas = futhark_new_f64_1d(this->ctx, input.alphas.data(), input.k)) != nullptr);
   assert((this->means = futhark_new_f64_2d(this->ctx, input.means.data(), input.k, input.d)) != nullptr);
   assert((this->icf = futhark_new_f64_2d(this->ctx, input.icf.data(), input.k, (input.d * (input.d + 1))/ 2)) != nullptr);
@@ -81,22 +76,21 @@ GMMOutput FutharkGMM::output()
 void FutharkGMM::calculate_objective(int times)
 {
   for (int i = 0; i < times; i++) {
-    assert(futhark_entry_calculate_objective(
-      this->ctx,
-      &(this->result.objective),
-      this->alphas,
-      this->means,
-      this->icf,
-      this->x,
-      this->w_gamma,
-      this->w_m
-      ) == 0);
+    assert(futhark_entry_gmm_calculate_objective
+           (this->ctx,
+            &(this->result.objective),
+            this->alphas,
+            this->means,
+            this->icf,
+            this->x,
+            this->w_gamma,
+            this->w_m
+            ) == 0);
 
     assert(futhark_context_sync(this->ctx) == 0);
   }
 }
 
-#ifndef USE_FWD
 void FutharkGMM::calculate_jacobian(int times)
 {
   struct futhark_f64_1d *J_alphas = nullptr;
@@ -111,52 +105,27 @@ void FutharkGMM::calculate_jacobian(int times)
     input.means.size();
 
   for (int i = 0; i < times; i++) {
-    assert(futhark_entry_calculate_jacobian(
-      this->ctx,
-      &J_alphas,
-      &J_means,
-      &J_icf,
-      this->alphas,
-      this->means,
-      this->icf,
-      this->x,
-      this->w_gamma,
-      this->w_m
-    ) == 0);
+    assert(futhark_entry_gmm_calculate_jacobian
+           (this->ctx,
+            &J_alphas,
+            &J_means,
+            &J_icf,
+            this->alphas,
+            this->means,
+            this->icf,
+            this->x,
+            this->w_gamma,
+            this->w_m
+            ) == 0);
 
-    assert(futhark_values_f64_1d(this->ctx, J_alphas, alphas_gradient_part) == 0);
-    assert(futhark_values_f64_2d(this->ctx, J_means, means_gradient_part) == 0);
-    assert(futhark_values_f64_2d(this->ctx, J_icf, icf_gradient_part) == 0);
-    assert(futhark_context_sync(this->ctx) == 0);
-  }
-}
-
-#else
-// Uses forward mode
-void FutharkGMM::calculate_jacobian(int times)
-{
-  struct futhark_f64_1d *fut_grad = nullptr;
-
-  for (int i = 0; i < times; i++)
-  {
-    assert(futhark_entry_calculate_jacobian_fwd(
-      this->ctx,
-      &fut_grad,
-      this->alphas,
-      this->means,
-      this->icf,
-      this->x,
-      this->w_gamma,
-      this->w_m
-    ) == 0);
-
-    assert(futhark_values_f64_1d(this->ctx, fut_grad, result.gradient.data()) == 0);
     assert(futhark_context_sync(this->ctx) == 0);
   }
 
+  assert(futhark_values_f64_1d(this->ctx, J_alphas, alphas_gradient_part) == 0);
+  assert(futhark_values_f64_2d(this->ctx, J_means, means_gradient_part) == 0);
+  assert(futhark_values_f64_2d(this->ctx, J_icf, icf_gradient_part) == 0);
+  assert(futhark_context_sync(this->ctx) == 0);
 }
-
-#endif
 
 extern "C" DLL_PUBLIC ITest<GMMInput, GMMOutput>* get_gmm_test()
 {

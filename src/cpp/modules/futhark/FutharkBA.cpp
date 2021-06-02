@@ -3,7 +3,7 @@
 #include "../../shared/BAData.h"
 
 extern "C" {
-#include "ba.h"
+#include "omnibus.h"
 }
 
 #include <vector>
@@ -81,7 +81,7 @@ void FutharkBA::calculate_objective(int times)
       futhark_free_f64_1d(this->ctx, w_err);
     }
 
-    assert(futhark_entry_calculate_objective
+    assert(futhark_entry_ba_calculate_objective
            (this->ctx,
             &reproj_err, &w_err,
             this->cams, this->X, this->w, this->obs, this->feats)
@@ -112,7 +112,7 @@ void FutharkBA::calculate_jacobian(int times)
       futhark_free_f64_1d(this->ctx, J_vals);
     }
 
-    assert(futhark_entry_calculate_jacobian
+    assert(futhark_entry_ba_calculate_jacobian
            (this->ctx,
             &J_rows, &J_cols, &J_vals,
             this->cams, this->X, this->w, this->obs, this->feats)
