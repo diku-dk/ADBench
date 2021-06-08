@@ -31,6 +31,7 @@ private:
   struct futhark_i32_1d *_correspondences;
   struct futhark_f64_2d *_points;
   struct futhark_f64_1d *_theta;
+  struct futhark_f64_1d *_us;
 
 public:
   // This function must be called before any other function.
@@ -62,7 +63,7 @@ struct futhark_f64_2d* pack_light_matrix(struct futhark_context *ctx,
   assert(fut != nullptr);
   assert(futhark_context_sync(ctx) == 0);
 
-  delete data;
+  delete[] data;
 
   return fut;
 }
@@ -90,7 +91,7 @@ struct futhark_f64_3d* pack_vector_light_matrix(struct futhark_context *ctx,
   assert(fut != nullptr);
   assert(futhark_context_sync(ctx) == 0);
 
-  delete data;
+  delete[] data;
 
   return fut;
 }
@@ -110,7 +111,7 @@ struct futhark_i32_2d* pack_triangles(struct futhark_context *ctx,
   assert(fut != nullptr);
   assert(futhark_context_sync(ctx) == 0);
 
-  delete data;
+  delete[] data;
 
   return fut;
 }
@@ -124,8 +125,6 @@ void FutharkHand::prepare(HandInput&& input)
   int err_size = 3 * _input.data.correspondences.size();
   int ncols = (_complicated ? 2 : 0) + _input.theta.size();
   _output = { std::vector<double>(err_size), ncols, err_size, std::vector<double>(err_size * ncols) };
-
-  assert(!_complicated); // Not implemented.
 
   _cfg = futhark_context_config_new();
   _ctx = futhark_context_new(_cfg);
@@ -148,6 +147,8 @@ void FutharkHand::prepare(HandInput&& input)
     pack_light_matrix(_ctx, _input.data.points);
   _theta =
     futhark_new_f64_1d(_ctx, _input.theta.data(), _input.theta.size());
+  _us =
+    futhark_new_f64_1d(_ctx, _input.us.data(), _input.us.size());
 }
 
 FutharkHand::~FutharkHand()
@@ -161,6 +162,7 @@ FutharkHand::~FutharkHand()
   assert(futhark_free_i32_1d(_ctx, _correspondences) == 0);
   assert(futhark_free_f64_2d(_ctx, _points) == 0);
   assert(futhark_free_f64_1d(_ctx, _theta) == 0);
+  assert(futhark_free_f64_1d(_ctx, _us) == 0);
 
   futhark_context_free(_ctx);
   futhark_context_config_free(_cfg);
@@ -194,7 +196,8 @@ void FutharkHand::calculate_objective(int times)
         _input.data.model.is_mirrored,
         _correspondences,
         _points,
-        _theta
+        _theta,
+        _us
         ));
 
     assert(futhark_context_sync(_ctx) == 0);
@@ -207,11 +210,11 @@ void FutharkHand::calculate_objective(int times)
 
 void FutharkHand::calculate_jacobian(int times)
 {
-  struct futhark_f64_3d *J = nullptr;
+  struct futhark_f64_2d *J = nullptr;
 
   for (int i = 0; i < times; i++) {
     if (i != 0) {
-      futhark_free_f64_3d(_ctx, J);
+      futhark_free_f64_2d(_ctx, J);
     }
 
     FUTHARK_SUCCEED
@@ -228,15 +231,16 @@ void FutharkHand::calculate_jacobian(int times)
         _input.data.model.is_mirrored,
         _correspondences,
         _points,
-        _theta
+        _theta,
+        _us
         ));
 
     FUTHARK_SUCCEED(_ctx, futhark_context_sync(_ctx));
   }
 
-  FUTHARK_SUCCEED(_ctx, futhark_values_f64_3d(_ctx, J, _output.jacobian.data()));
+  FUTHARK_SUCCEED(_ctx, futhark_values_f64_2d(_ctx, J, _output.jacobian.data()));
   FUTHARK_SUCCEED(_ctx,futhark_context_sync(_ctx));
-  FUTHARK_SUCCEED(_ctx, futhark_free_f64_3d(_ctx, J));
+  FUTHARK_SUCCEED(_ctx, futhark_free_f64_2d(_ctx, J));
 }
 
 extern "C" DLL_PUBLIC ITest<HandInput, HandOutput>* get_hand_test()

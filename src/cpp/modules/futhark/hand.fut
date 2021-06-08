@@ -124,16 +124,36 @@ let to_pose_params (theta: []f64) (num_bones: i64) : [][]f64 =
                          else if j % 4 == 1 then [theta[j + 1], theta[j + 2], 0]
                          else [theta[j + 2], 0, 0])
 
-let objective [num_bones][N][M]
+let (+^) = map2 (f64.+)
+
+-- Not sure if this should be a run-time parameter, but it is constant
+-- for all datasets, and seems more like an algorithmic property (it's
+-- an encoding of various spatial transformations).
+let theta_count : i64 = 26
+
+let objective [num_bones][N][M][num_us]
     (model: hand_model [num_bones][M])
     (correspondences: [N]i32)
     (points: [3][N]f64)
-    (theta: [26]f64) : [N][3]f64 =
+    (theta: [theta_count]f64)
+    (us: [num_us]f64) : [N][3]f64 =
   let pose_params = to_pose_params theta num_bones
   let vertex_positions = get_skinned_vertex_positions model pose_params true
-  in map2 (\point correspondence ->
-             map2 (-) point vertex_positions[:, correspondence])
-          (transpose points) correspondences
+  in if length us == 0
+     then -- "Simple" case
+       map2 (\point correspondence ->
+               map2 (-) point vertex_positions[:, correspondence])
+            (transpose points) correspondences
+     else -- "Complex" case
+     let us = unflatten N 2 us
+     in map3 (\point correspondence u ->
+             let verts = model.triangles[correspondence]
+             let hand_point =
+               map (*u[0]) (vertex_positions[:, verts[0]])
+               +^ map (*u[1]) vertex_positions[:, verts[1]]
+               +^ map (*(1 - u[0] - u[1])) (vertex_positions[:, verts[2]])
+             in map2 (-) point hand_point)
+          (transpose points) correspondences us
 
 -- All parameters up to and including 'is_mirrored' constitute the
 -- model.  Of the remaining three parameters, 'theta' is called 'p' in
@@ -146,7 +166,8 @@ entry calculate_objective [num_bones][N][M]
     (base_positions: [4][M]f64)
     (triangles: [][3]i32)
     (is_mirrored: bool)
-    (correspondences: [N]i32) (points: [3][N]f64) (theta: [26]f64) : [N][3]f64 =
+    (correspondences: [N]i32) (points: [3][N]f64) (theta: [theta_count]f64) (us: []f64)
+    : [N][3]f64 =
   let model : hand_model [num_bones][M] =
     { parents,
       base_relatives,
@@ -155,9 +176,10 @@ entry calculate_objective [num_bones][N][M]
       base_positions,
       triangles,
       is_mirrored }
-  in objective model correspondences points theta
+  in objective model correspondences points theta us
 
-entry calculate_jacobian [num_bones][N][M]
+-- The Jacobian is morally transposed, because that is what ADBench expects.
+entry calculate_jacobian [num_bones][N][M][num_us]
   (parents: [num_bones]i32)
   (base_relatives: [num_bones][4][4]f64)
   (inverse_base_absolutes: [num_bones][4][4]f64)
@@ -165,7 +187,8 @@ entry calculate_jacobian [num_bones][N][M]
   (base_positions: [4][M]f64)
   (triangles: [][3]i32)
   (is_mirrored: bool)
-  (correspondences: [N]i32) (points: [3][N]f64) (theta: [26]f64) : [26][N][3]f64 =
+  (correspondences: [N]i32) (points: [3][N]f64) (theta: [theta_count]f64) (us: [num_us]f64)
+  : [][]f64 =
   let model : hand_model [num_bones][M] =
     { parents,
       base_relatives,
@@ -174,9 +197,19 @@ entry calculate_jacobian [num_bones][N][M]
       base_positions,
       triangles,
       is_mirrored }
-  in tabulate 26 (\i ->
-                    let theta' = tabulate 26 ((==i) >-> f64.bool)
-                    in jvp (objective model correspondences points) theta theta')
+  let f i =
+    let theta' = tabulate theta_count (\j -> f64.bool(j==i))
+    let us' = tabulate num_us (\j -> f64.bool(i >= theta_count && (j%2)==(i%2)))
+    in jvp (\(a,b) -> objective model correspondences points a b)
+           (theta,us) (theta',us')
+  let us_derivs = if num_us == 0 then 0 else 2
+  let J = map (flatten_to (N*3)) (tabulate (theta_count+us_derivs) f)
+  in if num_us == 0
+     then J
+     else
+       -- ADBench expects the packed 'us' derivatives to be in the
+       -- first two columns.
+       rotate (-2) J
 
 -- ==
 -- entry: calculate_objective
@@ -206,6 +239,34 @@ entry calculate_jacobian [num_bones][N][M]
 -- compiled input @ data/simple_big/hand10_t26_c25600.in
 -- compiled input @ data/simple_big/hand11_t26_c51200.in
 -- compiled input @ data/simple_big/hand12_t26_c100000.in
+--
+-- compiled input @ data/complicated_small/hand1_t26_c100.in
+-- output @ data/complicated_small/hand1_t26_c100.F
+-- compiled input @ data/complicated_small/hand2_t26_c192.in
+-- compiled input @ data/complicated_small/hand3_t26_c200.in
+-- compiled input @ data/complicated_small/hand4_t26_c400.in
+-- compiled input @ data/complicated_small/hand5_t26_c800.in
+-- compiled input @ data/complicated_small/hand6_t26_c1600.in
+-- compiled input @ data/complicated_small/hand7_t26_c3200.in
+-- compiled input @ data/complicated_small/hand8_t26_c6400.in
+-- compiled input @ data/complicated_small/hand9_t26_c12800.in
+-- compiled input @ data/complicated_small/hand10_t26_c25600.in
+-- compiled input @ data/complicated_small/hand11_t26_c51200.in
+-- compiled input @ data/complicated_small/hand12_t26_c100000.in
+--
+-- compiled input @ data/complicated_big/hand1_t26_c100.in
+-- compiled input @ data/complicated_big/hand2_t26_c192.in
+-- compiled input @ data/complicated_big/hand3_t26_c200.in
+-- compiled input @ data/complicated_big/hand4_t26_c400.in
+-- compiled input @ data/complicated_big/hand5_t26_c800.in
+-- compiled input @ data/complicated_big/hand6_t26_c1600.in
+-- compiled input @ data/complicated_big/hand7_t26_c3200.in
+-- compiled input @ data/complicated_big/hand8_t26_c6400.in
+-- compiled input @ data/complicated_big/hand9_t26_c12800.in
+-- compiled input @ data/complicated_big/hand10_t26_c25600.in
+-- compiled input @ data/complicated_big/hand11_t26_c51200.in
+-- compiled input @ data/complicated_big/hand12_t26_c100000.in
+
 
 -- ==
 -- entry: calculate_jacobian
@@ -235,3 +296,30 @@ entry calculate_jacobian [num_bones][N][M]
 -- compiled input @ data/simple_big/hand10_t26_c25600.in
 -- compiled input @ data/simple_big/hand11_t26_c51200.in
 -- compiled input @ data/simple_big/hand12_t26_c100000.in
+--
+-- compiled input @ data/complicated_small/hand1_t26_c100.in
+-- output @ data/complicated_small/hand1_t26_c100.J
+-- compiled input @ data/complicated_small/hand2_t26_c192.in
+-- compiled input @ data/complicated_small/hand3_t26_c200.in
+-- compiled input @ data/complicated_small/hand4_t26_c400.in
+-- compiled input @ data/complicated_small/hand5_t26_c800.in
+-- compiled input @ data/complicated_small/hand6_t26_c1600.in
+-- compiled input @ data/complicated_small/hand7_t26_c3200.in
+-- compiled input @ data/complicated_small/hand8_t26_c6400.in
+-- compiled input @ data/complicated_small/hand9_t26_c12800.in
+-- compiled input @ data/complicated_small/hand10_t26_c25600.in
+-- compiled input @ data/complicated_small/hand11_t26_c51200.in
+-- compiled input @ data/complicated_small/hand12_t26_c100000.in
+--
+-- compiled input @ data/complicated_big/hand1_t26_c100.in
+-- compiled input @ data/complicated_big/hand2_t26_c192.in
+-- compiled input @ data/complicated_big/hand3_t26_c200.in
+-- compiled input @ data/complicated_big/hand4_t26_c400.in
+-- compiled input @ data/complicated_big/hand5_t26_c800.in
+-- compiled input @ data/complicated_big/hand6_t26_c1600.in
+-- compiled input @ data/complicated_big/hand7_t26_c3200.in
+-- compiled input @ data/complicated_big/hand8_t26_c6400.in
+-- compiled input @ data/complicated_big/hand9_t26_c12800.in
+-- compiled input @ data/complicated_big/hand10_t26_c25600.in
+-- compiled input @ data/complicated_big/hand11_t26_c51200.in
+-- compiled input @ data/complicated_big/hand12_t26_c100000.in
