@@ -47,6 +47,7 @@ tool_styles = {
     "ManualEigen": ("k", "s", "C++, Manual Eigen"),
     "ManualEigenVector": ("k", "D", "C++, Manual Eigen Vector"),
     "Tapenade": ("y", "*", "C, Tapenade"),
+    "Futhark": ("#5f021f", "X", "Futhark"),
 
     # .Net tools
     "DiffSharpModule": ("grey", "D", "F#, DiffSharp"),
